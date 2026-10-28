@@ -1,8 +1,9 @@
+import re
 
-import streamlit as st
 import pandas as pd
 import plotly.express as px
 import requests
+import streamlit as st
 
 from conexion import conectar
 
@@ -19,6 +20,9 @@ st.set_page_config(
 
 SEMANTIC_VIEW = "SOURCE_DATA.PUBLIC.SOURCE_DATA_SV"
 API_ENDPOINT = "/api/v2/cortex/analyst/message"
+
+# Número de mensajes anteriores que se envían para conservar el contexto.
+MAX_MENSAJES_HISTORIAL = 12
 
 st.title("Dashboard de Exportaciones")
 
@@ -37,6 +41,7 @@ def consultar_snowflake(sql):
             cursor.execute(sql)
             columnas = [columna[0] for columna in cursor.description]
             filas = cursor.fetchall()
+
             return pd.DataFrame(filas, columns=columnas)
 
         finally:
@@ -70,7 +75,7 @@ def formato_numero(valor, decimales=0):
 
 
 # --------------------------------------------------
-# RESUMEN AUTOMÁTICO EN PALABRAS
+# RESUMEN LOCAL DE RESULTADOS
 # --------------------------------------------------
 
 def generar_resumen(datos, pregunta):
@@ -83,17 +88,19 @@ def generar_resumen(datos, pregunta):
 
     palabras_kilos = ["kilos", "kg", "cantidad", "volumen"]
     palabras_precio = [
-        "precio promedio", "precio por kilo", "precio por kg"
+        "precio promedio",
+        "precio por kilo",
+        "precio por kg",
     ]
     palabras_fob = ["fob", "valor", "ventas", "ingresos"]
 
-    if any(p in pregunta_lower for p in palabras_precio):
+    if any(palabra in pregunta_lower for palabra in palabras_precio):
         preferencias = ["PRECIO PROMEDIO", "PRECIO USD"]
         unidad = "US$ por kg"
-    elif any(p in pregunta_lower for p in palabras_kilos):
+    elif any(palabra in pregunta_lower for palabra in palabras_kilos):
         preferencias = ["TOTAL KG", "CANTIDAD", "KILOS"]
         unidad = "kg"
-    elif any(p in pregunta_lower for p in palabras_fob):
+    elif any(palabra in pregunta_lower for palabra in palabras_fob):
         preferencias = ["TOTAL FOB", "VALOR FOB", "FOB"]
         unidad = "US$"
     else:
@@ -138,7 +145,6 @@ def generar_resumen(datos, pregunta):
         return "No hay valores numéricos válidos para resumir."
 
     nombre_metrica = valor.replace("_", " ").lower()
-
     categorias = [
         columna for columna in df.columns
         if columna != valor and columna not in metricas
@@ -147,8 +153,11 @@ def generar_resumen(datos, pregunta):
     pide_porcentaje = any(
         palabra in pregunta_lower
         for palabra in [
-            "porcentaje", "proporción", "proporcion",
-            "participación", "participacion"
+            "porcentaje",
+            "proporción",
+            "proporcion",
+            "participación",
+            "participacion",
         ]
     )
 
@@ -182,7 +191,6 @@ def generar_resumen(datos, pregunta):
             f"La consulta incluye {len(df)} resultados."
         )
 
-    # Resultado único, incluyendo su categoría.
     if len(df) == 1:
         valor_unico = df[valor].iloc[0]
 
@@ -211,7 +219,7 @@ def generar_resumen(datos, pregunta):
 
 
 # --------------------------------------------------
-# GENERACIÓN AUTOMÁTICA DE GRÁFICOS
+# GRÁFICOS PARA RESULTADOS DEL CHATBOT
 # --------------------------------------------------
 
 def generar_grafico_chat(datos, pregunta):
@@ -248,14 +256,20 @@ def generar_grafico_chat(datos, pregunta):
             continue
 
         nombre = normalizar(columna)
-
         parece_metrica = any(
             palabra in nombre
             for palabra in [
-                "total fob", "valor fob", "fob",
-                "total kg", "cantidad", "kilos",
-                "precio promedio", "precio usd",
-                "total", "valor", "porcentaje"
+                "total fob",
+                "valor fob",
+                "fob",
+                "total kg",
+                "cantidad",
+                "kilos",
+                "precio promedio",
+                "precio usd",
+                "total",
+                "valor",
+                "porcentaje",
             ]
         )
 
@@ -321,10 +335,17 @@ def generar_grafico_chat(datos, pregunta):
     pide_evolucion = any(
         palabra in pregunta_lower
         for palabra in [
-            "evolución", "evolucion", "tendencia",
-            "histórico", "historico", "mensual",
-            "por mes", "por año", "anual",
-            "a través del tiempo", "con el tiempo"
+            "evolución",
+            "evolucion",
+            "tendencia",
+            "histórico",
+            "historico",
+            "mensual",
+            "por mes",
+            "por año",
+            "anual",
+            "a través del tiempo",
+            "con el tiempo",
         ]
     )
 
@@ -334,7 +355,7 @@ def generar_grafico_chat(datos, pregunta):
         if df.empty:
             return None
 
-        fig = px.line(
+        figura = px.line(
             df,
             x=temporal,
             y=valor,
@@ -346,7 +367,7 @@ def generar_grafico_chat(datos, pregunta):
             },
         )
 
-        return preparar_grafico(fig)
+        return preparar_grafico(figura)
 
     categorias = [
         columna for columna in df.columns
@@ -357,13 +378,16 @@ def generar_grafico_chat(datos, pregunta):
         return None
 
     categoria = categorias[0]
-
     pide_proporcion = any(
         palabra in pregunta_lower
         for palabra in [
-            "porcentaje", "proporción", "proporcion",
-            "participación", "participacion",
-            "distribución", "distribucion"
+            "porcentaje",
+            "proporción",
+            "proporcion",
+            "participación",
+            "participacion",
+            "distribución",
+            "distribucion",
         ]
     )
 
@@ -373,7 +397,7 @@ def generar_grafico_chat(datos, pregunta):
         if df.empty:
             return None
 
-        fig = px.pie(
+        figura = px.pie(
             df,
             names=categoria,
             values=valor,
@@ -381,7 +405,7 @@ def generar_grafico_chat(datos, pregunta):
             title=f"Distribución de {normalizar(valor)}",
         )
 
-        return preparar_grafico(fig)
+        return preparar_grafico(figura)
 
     df[valor] = pd.to_numeric(df[valor], errors="coerce")
     df = df.dropna(subset=[categoria, valor]).sort_values(
@@ -392,7 +416,7 @@ def generar_grafico_chat(datos, pregunta):
     if df.empty:
         return None
 
-    fig = px.bar(
+    figura = px.bar(
         df,
         x=valor,
         y=categoria,
@@ -405,7 +429,7 @@ def generar_grafico_chat(datos, pregunta):
     )
 
     return preparar_grafico(
-        fig,
+        figura,
         max(380, min(600, len(df) * 35)),
     )
 
@@ -491,17 +515,147 @@ def cargar_exportadoras():
 
 
 # --------------------------------------------------
-# CORTEX ANALYST
+# VALIDACIÓN Y CONTEXTO DE CORTEX ANALYST
 # --------------------------------------------------
 
-def consultar_cortex(pregunta, historial=None):
+def validar_sql_analyst(sql):
+    if not sql or not isinstance(sql, str):
+        raise ValueError("Cortex Analyst no devolvió una consulta SQL.")
+
+    sql_limpio = sql.strip().rstrip(";")
+
+    # Se rechaza cualquier comentario o más de una sentencia.
+    if ";" in sql_limpio:
+        raise ValueError("La consulta generada contiene más de una sentencia.")
+
+    sin_comentarios = re.sub(
+        r"/\*.*?\*/|--[^\r\n]*",
+        " ",
+        sql_limpio,
+        flags=re.DOTALL,
+    ).strip()
+
+    empieza_con_select = re.match(
+        r"^SELECT\b",
+        sin_comentarios,
+        flags=re.IGNORECASE,
+    )
+    empieza_con_cte = re.match(
+        r"^WITH\b",
+        sin_comentarios,
+        flags=re.IGNORECASE,
+    )
+    contiene_select = re.search(
+        r"\bSELECT\b",
+        sin_comentarios,
+        flags=re.IGNORECASE,
+    )
+
+    if not (empieza_con_select or (empieza_con_cte and contiene_select)):
+        raise ValueError("Solo se permiten consultas SELECT.")
+
+    # Acepta identificadores entre comillas y referencias directas a la
+    # misma vista semántica, pero no permite cambiar a otra tabla.
+    sql_sin_comillas = sin_comentarios.replace('"', "")
+    vista_autorizada = re.search(
+        r"\bFROM\s+(?:SEMANTIC_VIEW\s*\(\s*)?"
+        r"SOURCE_DATA\s*\.\s*PUBLIC\s*\.\s*SOURCE_DATA_SV\b",
+        sql_sin_comillas,
+        flags=re.IGNORECASE,
+    )
+
+    if not vista_autorizada:
+        raise ValueError(
+            "La consulta debe usar la vista semántica autorizada."
+        )
+
+    palabras_no_permitidas = re.search(
+        r"\b(INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|"
+        r"TRUNCATE|COPY|PUT|GET|CALL|EXECUTE|GRANT|REVOKE)\b",
+        sin_comentarios,
+        flags=re.IGNORECASE,
+    )
+
+    if palabras_no_permitidas:
+        raise ValueError("La consulta contiene una operación no permitida.")
+
+    return sql_limpio
+
+
+def construir_historial_para_analyst(mensajes_chat):
+    """
+    Convierte el historial visible de Streamlit al formato de Cortex Analyst.
+
+    Analyst recibe historial de mensajes, pero no tiene acceso automático
+    a los resultados completos de las consultas SQL anteriores.
+    """
+    anteriores = mensajes_chat[:-1][-MAX_MENSAJES_HISTORIAL:]
+    historial = []
+
+    for mensaje in anteriores:
+        if mensaje.get("role") == "user":
+            historial.append({
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": mensaje.get("content", ""),
+                    }
+                ],
+            })
+
+        elif mensaje.get("role") == "assistant":
+            contenido = mensaje.get("contenido")
+
+            if contenido:
+                historial.append({
+                    "role": "analyst",
+                    "content": contenido,
+                })
+            else:
+                historial.append({
+                    "role": "analyst",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": mensaje.get("content", ""),
+                        }
+                    ],
+                })
+
+    return historial
+
+
+INTERPRETACION_ANALYST = re.compile(
+    r"^\s*This is our interpretation of your question:\s*.*?(?:\r?\n\s*\r?\n|$)",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+
+def limpiar_texto_analyst(texto):
+    if not texto:
+        return ""
+    return INTERPRETACION_ANALYST.sub("", str(texto), count=1).strip()
+
+def consultar_cortex(pregunta, mensajes_chat):
     conn = conectar()
 
     try:
         url = f"https://{conn.host}{API_ENDPOINT}"
+        historial = construir_historial_para_analyst(mensajes_chat)
 
-        # Cada consulta se envía sin historial previo para diagnosticar
-        # el error HTTP 400 de las preguntas consecutivas.
+        mensajes_api = historial + [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": pregunta,
+                    }
+                ],
+            }
+        ]
+
         respuesta = requests.post(
             url,
             headers={
@@ -510,33 +664,19 @@ def consultar_cortex(pregunta, historial=None):
             },
             json={
                 "semantic_view": SEMANTIC_VIEW,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": pregunta,
-                            }
-                        ],
-                    }
-                ],
+                "messages": mensajes_api,
             },
             timeout=60,
         )
 
         if not respuesta.ok:
-            print("ESTADO HTTP:", respuesta.status_code)
-            print("DETALLE CORTEX:", respuesta.text)
-
             try:
                 detalle = respuesta.json()
             except ValueError:
                 detalle = respuesta.text
 
             raise RuntimeError(
-                f"Snowflake respondió HTTP {respuesta.status_code}: "
-                f"{detalle}"
+                f"Snowflake respondió HTTP {respuesta.status_code}: {detalle}"
             )
 
         resultado = respuesta.json()
@@ -544,35 +684,41 @@ def consultar_cortex(pregunta, historial=None):
         contenido = mensaje.get("content", [])
 
         textos = []
+        sugerencias = []
         sql = None
 
         for bloque in contenido:
-            if bloque.get("type") == "text":
-                textos.append(bloque.get("text", ""))
+            tipo = bloque.get("type")
 
-            elif bloque.get("type") == "sql":
+            if tipo == "text":
+                texto = bloque.get("text", "")
+                if texto:
+                    textos.append(texto)
+
+            elif tipo == "sql":
                 sql = bloque.get("statement")
 
+            elif tipo in ("suggestion", "suggestions"):
+                opciones = bloque.get("suggestions", [])
+
+                if isinstance(opciones, list):
+                    sugerencias.extend(
+                        str(opcion) for opcion in opciones if opcion
+                    )
+
+                texto_sugerencia = bloque.get("text")
+                if texto_sugerencia:
+                    sugerencias.append(str(texto_sugerencia))
+
         datos = None
+        sql_validado = None
 
         if sql:
-            sql_limpio = sql.strip().rstrip(";")
-            sql_mayusculas = sql_limpio.upper()
-
-            if (
-                not sql_mayusculas.startswith("SELECT")
-                or "SEMANTIC_VIEW(" not in sql_mayusculas
-                or ";" in sql_limpio
-            ):
-                raise ValueError(
-                    "La consulta generada no pasó "
-                    "la validación básica de lectura."
-                )
-
+            sql_validado = validar_sql_analyst(sql)
             cursor = conn.cursor()
 
             try:
-                cursor.execute(sql_limpio)
+                cursor.execute(sql_validado)
                 columnas = [
                     columna[0] for columna in cursor.description
                 ]
@@ -583,22 +729,22 @@ def consultar_cortex(pregunta, historial=None):
             finally:
                 cursor.close()
 
-        texto = "\n\n".join(
-            item for item in textos if item
-        ).strip()
+        texto = "\n\n".join(item for item in textos if item).strip()
+        texto = limpiar_texto_analyst(texto)
 
-        if not texto:
-            texto = (
-                "Cortex Analyst generó una consulta SQL."
-                if sql
-                else "Cortex Analyst no devolvió una respuesta."
-            )
+        if not texto and sugerencias:
+            texto = "Necesito un poco más de detalle. Prueba con una de estas preguntas:"
+        elif not texto and sql:
+            texto = ""
+        elif not texto:
+            texto = "Cortex Analyst no devolvió una respuesta."
 
         return {
             "texto": texto,
-            "sql": sql,
+            "sql": sql_validado,
             "datos": datos,
             "contenido": contenido,
+            "sugerencias": sugerencias,
         }
 
     finally:
@@ -663,10 +809,11 @@ with tab_dashboard:
 
         if not paises.empty:
             paises["TOTAL_FOB_USD"] = pd.to_numeric(
-                paises["TOTAL_FOB_USD"], errors="coerce"
+                paises["TOTAL_FOB_USD"],
+                errors="coerce",
             ).fillna(0)
 
-            fig = px.bar(
+            figura = px.bar(
                 paises.sort_values("TOTAL_FOB_USD"),
                 x="TOTAL_FOB_USD",
                 y="PAIS_DESTINO",
@@ -676,7 +823,11 @@ with tab_dashboard:
                     "PAIS_DESTINO": "País de destino",
                 },
             )
-            st.plotly_chart(preparar_grafico(fig, 450), width="stretch")
+
+            st.plotly_chart(
+                preparar_grafico(figura, 450),
+                width="stretch",
+            )
         else:
             st.info("No hay datos por país.")
 
@@ -687,16 +838,21 @@ with tab_dashboard:
 
             if not frutas.empty:
                 frutas["TOTAL_FOB_USD"] = pd.to_numeric(
-                    frutas["TOTAL_FOB_USD"], errors="coerce"
+                    frutas["TOTAL_FOB_USD"],
+                    errors="coerce",
                 ).fillna(0)
 
-                fig = px.pie(
+                figura = px.pie(
                     frutas,
                     names="FRUTA",
                     values="TOTAL_FOB_USD",
                     hole=0.4,
                 )
-                st.plotly_chart(preparar_grafico(fig), width="stretch")
+
+                st.plotly_chart(
+                    preparar_grafico(figura),
+                    width="stretch",
+                )
             else:
                 st.info("No hay datos por fruta.")
 
@@ -704,13 +860,17 @@ with tab_dashboard:
             st.subheader("Evolución mensual del valor FOB")
 
             if not meses.empty:
-                meses["MES"] = pd.to_datetime(meses["MES"], errors="coerce")
+                meses["MES"] = pd.to_datetime(
+                    meses["MES"],
+                    errors="coerce",
+                )
                 meses["TOTAL_FOB_USD"] = pd.to_numeric(
-                    meses["TOTAL_FOB_USD"], errors="coerce"
+                    meses["TOTAL_FOB_USD"],
+                    errors="coerce",
                 ).fillna(0)
                 meses = meses.dropna(subset=["MES"])
 
-                fig = px.line(
+                figura = px.line(
                     meses.sort_values("MES"),
                     x="MES",
                     y="TOTAL_FOB_USD",
@@ -720,7 +880,11 @@ with tab_dashboard:
                         "TOTAL_FOB_USD": "Valor FOB (USD)",
                     },
                 )
-                st.plotly_chart(preparar_grafico(fig), width="stretch")
+
+                st.plotly_chart(
+                    preparar_grafico(figura),
+                    width="stretch",
+                )
             else:
                 st.info("No hay datos mensuales.")
 
@@ -728,10 +892,11 @@ with tab_dashboard:
 
         if not frutas.empty:
             frutas["TOTAL_KG"] = pd.to_numeric(
-                frutas["TOTAL_KG"], errors="coerce"
+                frutas["TOTAL_KG"],
+                errors="coerce",
             ).fillna(0)
 
-            fig = px.bar(
+            figura = px.bar(
                 frutas.sort_values("TOTAL_KG"),
                 x="TOTAL_KG",
                 y="FRUTA",
@@ -741,29 +906,41 @@ with tab_dashboard:
                     "FRUTA": "Fruta",
                 },
             )
-            st.plotly_chart(preparar_grafico(fig), width="stretch")
+
+            st.plotly_chart(
+                preparar_grafico(figura),
+                width="stretch",
+            )
 
         st.subheader("Valor FOB por exportadora")
 
         if not exportadoras.empty:
             exportadoras["TOTAL_FOB_USD"] = pd.to_numeric(
-                exportadoras["TOTAL_FOB_USD"], errors="coerce"
+                exportadoras["TOTAL_FOB_USD"],
+                errors="coerce",
             ).fillna(0)
 
-            fig = px.treemap(
+            figura = px.treemap(
                 exportadoras,
                 path=["EXPORTADORA"],
                 values="TOTAL_FOB_USD",
             )
-            st.plotly_chart(preparar_grafico(fig, 420), width="stretch")
+
+            st.plotly_chart(
+                preparar_grafico(figura, 420),
+                width="stretch",
+            )
 
         with st.expander("Ver datos agregados"):
             st.markdown("**Países de destino**")
             st.dataframe(paises, width="stretch")
+
             st.markdown("**Frutas**")
             st.dataframe(frutas, width="stretch")
+
             st.markdown("**Datos mensuales**")
             st.dataframe(meses, width="stretch")
+
             st.markdown("**Exportadoras**")
             st.dataframe(exportadoras, width="stretch")
 
@@ -780,98 +957,239 @@ if "mensajes_chat" not in st.session_state:
 
 
 with tab_chatbot:
-    st.subheader("Consulta tus exportaciones")
-    st.write("Haz preguntas en lenguaje natural sobre los datos de Snowflake.")
+    with st.container(key="chatbot_shell"):
+        st.markdown(
+            """
+            <style>
+            .st-key-chatbot_shell {
+                max-width: 920px;
+                margin: 0 auto;
+                padding: 1.25rem 1rem 7rem;
+            }
+            .st-key-chatbot_shell .chatbot-heading {
+                display: flex;
+                align-items: center;
+                gap: .8rem;
+                margin: .2rem 0 1.7rem;
+            }
+            .st-key-chatbot_shell .chatbot-mark {
+                display: grid;
+                place-items: center;
+                width: 2.5rem;
+                height: 2.5rem;
+                border-radius: 50%;
+                color: white;
+                background: linear-gradient(145deg, #166534, #22a06b);
+                font-size: 1.25rem;
+            }
+            .st-key-chatbot_shell .chatbot-title {
+                margin: 0;
+                font-size: 1.15rem;
+                font-weight: 650;
+                line-height: 1.25;
+            }
+            .st-key-chatbot_shell .chatbot-subtitle {
+                margin: .2rem 0 0;
+                color: #737373;
+                font-size: .86rem;
+            }
+            .st-key-chatbot_shell .chatbot-welcome {
+                max-width: 650px;
+                margin: 5vh auto 2rem;
+                text-align: center;
+            }
+            .st-key-chatbot_shell .chatbot-welcome h2 {
+                margin-bottom: .55rem;
+                font-size: clamp(1.8rem, 4vw, 2.35rem);
+                font-weight: 650;
+                letter-spacing: -.035em;
+            }
+            .st-key-chatbot_shell .chatbot-welcome p {
+                color: #737373;
+                font-size: 1rem;
+            }
+            .st-key-chatbot_shell [data-testid="stChatMessage"] {
+                border-radius: 1.1rem;
+                padding: .85rem 1.1rem;
+                margin: .45rem 0 1rem;
+            }
+            .st-key-chatbot_shell [data-testid="stChatInput"] {
+                position: fixed !important;
+                left: 50%;
+                bottom: 1rem;
+                z-index: 1000;
+                width: min(920px, calc(100vw - 2rem));
+                transform: translateX(-50%);
+                border-radius: 1.5rem;
+                background: var(--background-color);
+                box-shadow: 0 0 0 .75rem var(--background-color);
+            }
+            .st-key-chatbot_shell [data-testid="stChatInput"] textarea {
+                padding-top: .85rem;
+                padding-bottom: .85rem;
+            }
+            .st-key-chatbot_shell .stButton > button {
+                border-radius: 1.2rem;
+                text-align: left;
+                white-space: normal;
+                min-height: 2.7rem;
+            }
+            .st-key-chatbot_shell .chatbot-followups {
+                margin-top: .8rem;
+                color: #737373;
+                font-size: .82rem;
+            }
+            @media (max-width: 700px) {
+                .st-key-chatbot_shell { padding: .6rem .5rem 6rem; }
+                .st-key-chatbot_shell .chatbot-welcome { margin-top: 3vh; }
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    # Mostrar el historial visual del chat.
-    for indice, mensaje in enumerate(st.session_state.mensajes_chat):
-        with st.chat_message(mensaje["role"]):
-            st.markdown(mensaje["content"])
-
-            if mensaje.get("resumen"):
-                st.markdown("**Resumen de los resultados**")
-                st.markdown(mensaje["resumen"])
-
-            if mensaje.get("sql"):
-                with st.expander("Ver SQL generado"):
-                    st.code(mensaje["sql"], language="sql")
-
-            datos_mensaje = mensaje.get("datos")
-
-            if datos_mensaje is not None:
-                st.dataframe(datos_mensaje, width="stretch")
-
-                if mensaje["role"] == "assistant":
-                    figura = generar_grafico_chat(
-                        datos_mensaje,
-                        mensaje.get("pregunta", ""),
+        if st.button("＋  Nueva conversación", key="chat_nueva_conversacion"):
+            st.session_state.mensajes_chat = []
+            st.session_state.pop("pregunta_sugerida_chat", None)
+            for clave in list(st.session_state):
+                if clave.startswith("mostrar_grafico_chat_"):
+                    del st.session_state[clave]
+            st.rerun()
+        pregunta_sugerida = None
+        if not st.session_state.mensajes_chat:
+            st.markdown(
+                """
+                <div class="chatbot-welcome">
+                    <h2>¿Qué quieres explorar?</h2>
+                    <p>Puedo ayudarte a encontrar tendencias y responder preguntas sobre tus exportaciones.</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            columnas_inicio = st.columns(3)
+            preguntas_inicio = [
+                "¿Qué país recibió más exportaciones?",
+                "Muéstrame la evolución mensual del FOB",
+                "¿Cuántos kilos se exportaron en total?",
+            ]
+            for posicion, (columna, sugerencia) in enumerate(
+                zip(columnas_inicio, preguntas_inicio)
+            ):
+                with columna:
+                    if st.button(
+                        sugerencia,
+                        key=f"chat_inicio_{posicion}",
+                        use_container_width=True,
+                    ):
+                        pregunta_sugerida = sugerencia
+        else:
+            for indice, mensaje in enumerate(st.session_state.mensajes_chat):
+                with st.chat_message(mensaje["role"]):
+                    texto_visible = limpiar_texto_analyst(
+                        mensaje.get("content", "")
                     )
+                    if texto_visible:
+                        st.markdown(texto_visible)
 
-                    if figura is not None:
-                        st.plotly_chart(
-                            figura,
-                            width="stretch",
-                            key=f"grafico_historial_{indice}",
+                    if mensaje.get("resumen"):
+                        st.markdown(mensaje["resumen"])
+
+                    sugerencias = mensaje.get("sugerencias", [])
+                    if sugerencias:
+                        st.markdown(
+                            '<div class="chatbot-followups">Puedes continuar con:</div>',
+                            unsafe_allow_html=True,
                         )
+                        columnas = st.columns(min(len(sugerencias), 3))
+                        for posicion, (columna, sugerencia) in enumerate(
+                            zip(columnas, sugerencias[:3])
+                        ):
+                            with columna:
+                                if st.button(
+                                    sugerencia,
+                                    key=f"chat_seguimiento_{indice}_{posicion}",
+                                    use_container_width=True,
+                                ):
+                                    pregunta_sugerida = sugerencia
 
-    pregunta = st.chat_input(
-        "Ej.: ¿Qué país tiene el mayor valor FOB?"
-    )
+                    if mensaje.get("sql"):
+                        with st.expander("Ver SQL generado"):
+                            st.code(mensaje["sql"], language="sql")
 
-    if pregunta:
-        st.session_state.mensajes_chat.append({
-            "role": "user",
-            "content": pregunta,
-        })
+                    datos_mensaje = mensaje.get("datos")
+                    if datos_mensaje is not None and mensaje["role"] == "assistant":
+                        clave_grafico = f"mostrar_grafico_chat_{indice}"
+                        if clave_grafico not in st.session_state:
+                            st.session_state[clave_grafico] = False
 
-        with st.chat_message("user"):
-            st.markdown(pregunta)
-
-        try:
-            with st.spinner("Consultando Cortex Analyst..."):
-                # La consulta se envía sin historial.
-                resultado = consultar_cortex(pregunta, [])
-
-            texto = resultado["texto"]
-            sql = resultado["sql"]
-            datos = resultado["datos"]
-            resumen = generar_resumen(datos, pregunta)
-
-            with st.chat_message("assistant"):
-                st.markdown(texto)
-
-                if datos is not None:
-                    st.markdown("**Resumen de los resultados**")
-                    st.markdown(resumen)
-
-                if sql:
-                    with st.expander("Ver SQL generado"):
-                        st.code(sql, language="sql")
-
-                if datos is not None:
-                    st.dataframe(datos, width="stretch")
-
-                    figura = generar_grafico_chat(datos, pregunta)
-
-                    if figura is not None:
-                        st.plotly_chart(
-                            figura,
-                            width="stretch",
-                            key=f"grafico_nuevo_{len(st.session_state.mensajes_chat)}",
+                        texto_boton = (
+                            "Ocultar gráfico"
+                            if st.session_state[clave_grafico]
+                            else "Ver gráfico"
                         )
+                        if st.button(
+                            texto_boton,
+                            key=f"boton_grafico_chat_{indice}",
+                        ):
+                            st.session_state[clave_grafico] = not st.session_state[clave_grafico]
+                            st.rerun()
 
+                        if st.session_state[clave_grafico]:
+                            figura = generar_grafico_chat(
+                                datos_mensaje,
+                                mensaje.get("pregunta", ""),
+                            )
+                            if figura is not None:
+                                st.plotly_chart(
+                                    figura,
+                                    width="stretch",
+                                    key=f"grafico_historial_{indice}",
+                                )
+
+        pregunta = st.chat_input(
+            "Envía un mensaje sobre tus exportaciones…",
+            key="chat_input_exportaciones",
+        )
+        if not pregunta:
+            pregunta = pregunta_sugerida or st.session_state.pop(
+                "pregunta_sugerida_chat", None
+            )
+
+        if pregunta:
             st.session_state.mensajes_chat.append({
-                "role": "assistant",
-                "content": texto,
-                "resumen": resumen if datos is not None else None,
-                "sql": sql,
-                "datos": datos,
-                "pregunta": pregunta,
+                "role": "user",
+                "content": pregunta,
             })
 
-        except Exception as error:
-            st.error(f"Error al consultar Cortex Analyst: {error}")
+            try:
+                with st.chat_message("assistant"):
+                    with st.spinner("Analizando tus datos…"):
+                        resultado = consultar_cortex(
+                            pregunta,
+                            st.session_state.mensajes_chat,
+                        )
 
-    if st.button("Limpiar conversación"):
-        st.session_state.mensajes_chat = []
-        st.rerun()
+                texto = resultado["texto"]
+                sql = resultado["sql"]
+                datos = resultado["datos"]
+                resumen = generar_resumen(datos, pregunta)
+                st.session_state.mensajes_chat.append({
+                    "role": "assistant",
+                    "content": texto,
+                    "resumen": resumen if datos is not None else None,
+                    "sql": sql,
+                    "datos": datos,
+                    "pregunta": pregunta,
+                    "contenido": resultado["contenido"],
+                    "sugerencias": resultado["sugerencias"],
+                })
+                st.rerun()
+
+            except Exception as error:
+                mensaje_error = f"No pude completar esa consulta. Detalle: {error}"
+                st.session_state.mensajes_chat.append({
+                    "role": "assistant",
+                    "content": mensaje_error,
+                    "contenido": [{"type": "text", "text": mensaje_error}],
+                })
+                st.rerun()

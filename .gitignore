@@ -6,3 +6,4 @@ venv/
 .streamlit/secrets.toml
 *.p8
 *.pem
+rsa_key.pub

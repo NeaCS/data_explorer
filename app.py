@@ -24,8 +24,6 @@ API_ENDPOINT = "/api/v2/cortex/analyst/message"
 # Número de mensajes anteriores que se envían para conservar el contexto.
 MAX_MENSAJES_HISTORIAL = 12
 
-st.title("Dashboard de Exportaciones")
-
 
 # --------------------------------------------------
 # FUNCIONES GENERALES

@@ -1,28 +1,27 @@
-
 import snowflake.connector
+import streamlit as st
+from cryptography.hazmat.primitives import serialization
 
 
 def conectar():
+    cfg = st.secrets["snowflake"]
+
+    clave = serialization.load_pem_private_key(
+        cfg["private_key"].encode(),
+        password=None,
+    )
+    clave_der = clave.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+
     return snowflake.connector.connect(
-        account="AXCNOLG-CU88061",
-        user="nea.castroserrano",
-        authenticator="OAUTH_AUTHORIZATION_CODE",
+        account=cfg["account"],
+        user=cfg["user"],
+        private_key=clave_der,
+        warehouse=cfg["warehouse"],
+        role=cfg.get("role"),
         database="SOURCE_DATA",
         schema="PUBLIC",
     )
-
-
-if __name__ == "__main__":
-    try:
-        conn = conectar()
-        print("¡Conexión con Snowflake exitosa!")
-        print("Cuenta:", conn.cursor().execute(
-            "SELECT CURRENT_ACCOUNT()"
-        ).fetchone()[0])
-        cursor = conn.cursor()
-        cursor.execute("SELECT CURRENT_DATABASE(), CURRENT_SCHEMA()")
-        print("Base de datos y esquema:", cursor.fetchone())
-        cursor.close()
-        conn.close()
-    except Exception as error:
-        print("Error de conexión:", error)

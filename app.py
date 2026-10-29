@@ -18,6 +18,24 @@ st.set_page_config(
     layout="wide",
 )
 
+APP_BG = st.get_option("theme.backgroundColor")
+if not APP_BG:
+    APP_BG = "#0e1117" if st.context.theme.type == "dark" else "#ffffff"
+
+NAVBAR_CSS = """
+<style>
+[data-testid="stTabs"] [role="tablist"] {
+    position: fixed !important;
+    top: 3.5rem !important;
+    left: 0;
+    right: 0;
+    z-index: 2000;
+    padding: .35rem 1rem 0;
+    background-color: __APP_BG__ !important;
+}
+</style>
+""".replace("__APP_BG__", APP_BG)
+st.markdown(NAVBAR_CSS, unsafe_allow_html=True)
 SEMANTIC_VIEW = "SOURCE_DATA.PUBLIC.SOURCE_DATA_SV"
 API_ENDPOINT = "/api/v2/cortex/analyst/message"
 
@@ -557,7 +575,7 @@ def validar_sql_analyst(sql):
     sql_sin_comillas = sin_comentarios.replace('"', "")
     vista_autorizada = re.search(
         r"\bFROM\s+(?:SEMANTIC_VIEW\s*\(\s*)?"
-        r"SOURCE_DATA\s*\.\s*PUBLIC\s*\.\s*SOURCE_DATA_SV\b",
+        r"'?SOURCE_DATA\s*\.\s*PUBLIC\s*\.\s*SOURCE_DATA_SV'?\b",
         sql_sin_comillas,
         flags=re.IGNORECASE,
     )
@@ -962,7 +980,7 @@ with tab_chatbot:
             .st-key-chatbot_shell {
                 max-width: 920px;
                 margin: 0 auto;
-                padding: 1.25rem 1rem 7rem;
+                padding: 1.25rem 1rem 1rem;
             }
             .st-key-chatbot_shell .chatbot-heading {
                 display: flex;
@@ -1038,7 +1056,7 @@ with tab_chatbot:
                 font-size: .82rem;
             }
             @media (max-width: 700px) {
-                .st-key-chatbot_shell { padding: .6rem .5rem 6rem; }
+                .st-key-chatbot_shell { padding: .6rem .5rem 1rem; }
                 .st-key-chatbot_shell .chatbot-welcome { margin-top: 3vh; }
             }
             </style>
@@ -1053,96 +1071,97 @@ with tab_chatbot:
                 if clave.startswith("mostrar_grafico_chat_"):
                     del st.session_state[clave]
             st.rerun()
-        pregunta_sugerida = None
-        if not st.session_state.mensajes_chat:
-            st.markdown(
-                """
-                <div class="chatbot-welcome">
-                    <h2>¿Qué quieres explorar?</h2>
-                    <p>Puedo ayudarte a encontrar tendencias y responder preguntas sobre tus exportaciones.</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            columnas_inicio = st.columns(3)
-            preguntas_inicio = [
-                "¿Qué país recibió más exportaciones?",
-                "Muéstrame la evolución mensual del FOB",
-                "¿Cuántos kilos se exportaron en total?",
-            ]
-            for posicion, (columna, sugerencia) in enumerate(
-                zip(columnas_inicio, preguntas_inicio)
-            ):
-                with columna:
-                    if st.button(
-                        sugerencia,
-                        key=f"chat_inicio_{posicion}",
-                        use_container_width=True,
-                    ):
-                        pregunta_sugerida = sugerencia
-        else:
-            for indice, mensaje in enumerate(st.session_state.mensajes_chat):
-                with st.chat_message(mensaje["role"]):
-                    texto_visible = limpiar_texto_analyst(
-                        mensaje.get("content", "")
-                    )
-                    if texto_visible:
-                        st.markdown(texto_visible)
-
-                    if mensaje.get("resumen"):
-                        st.markdown(mensaje["resumen"])
-
-                    sugerencias = mensaje.get("sugerencias", [])
-                    if sugerencias:
-                        st.markdown(
-                            '<div class="chatbot-followups">Puedes continuar con:</div>',
-                            unsafe_allow_html=True,
-                        )
-                        columnas = st.columns(min(len(sugerencias), 3))
-                        for posicion, (columna, sugerencia) in enumerate(
-                            zip(columnas, sugerencias[:3])
-                        ):
-                            with columna:
-                                if st.button(
-                                    sugerencia,
-                                    key=f"chat_seguimiento_{indice}_{posicion}",
-                                    use_container_width=True,
-                                ):
-                                    pregunta_sugerida = sugerencia
-
-                    if mensaje.get("sql"):
-                        with st.expander("Ver SQL generado"):
-                            st.code(mensaje["sql"], language="sql")
-
-                    datos_mensaje = mensaje.get("datos")
-                    if datos_mensaje is not None and mensaje["role"] == "assistant":
-                        clave_grafico = f"mostrar_grafico_chat_{indice}"
-                        if clave_grafico not in st.session_state:
-                            st.session_state[clave_grafico] = False
-
-                        texto_boton = (
-                            "Ocultar gráfico"
-                            if st.session_state[clave_grafico]
-                            else "Ver gráfico"
-                        )
+        with st.container(height=390, border=False, key="chat_history"):
+            pregunta_sugerida = None
+            if not st.session_state.mensajes_chat:
+                st.markdown(
+                    """
+                    <div class="chatbot-welcome">
+                        <h2>¿Qué quieres explorar?</h2>
+                        <p>Puedo ayudarte a encontrar tendencias y responder preguntas sobre tus exportaciones.</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                columnas_inicio = st.columns(3)
+                preguntas_inicio = [
+                    "¿Qué país recibió más exportaciones?",
+                    "Muéstrame la evolución mensual del FOB",
+                    "¿Cuántos kilos se exportaron en total?",
+                ]
+                for posicion, (columna, sugerencia) in enumerate(
+                    zip(columnas_inicio, preguntas_inicio)
+                ):
+                    with columna:
                         if st.button(
-                            texto_boton,
-                            key=f"boton_grafico_chat_{indice}",
+                            sugerencia,
+                            key=f"chat_inicio_{posicion}",
+                            use_container_width=True,
                         ):
-                            st.session_state[clave_grafico] = not st.session_state[clave_grafico]
-                            st.rerun()
+                            pregunta_sugerida = sugerencia
+            else:
+                for indice, mensaje in enumerate(st.session_state.mensajes_chat):
+                    with st.chat_message(mensaje["role"]):
+                        texto_visible = limpiar_texto_analyst(
+                            mensaje.get("content", "")
+                        )
+                        if texto_visible:
+                            st.markdown(texto_visible)
 
-                        if st.session_state[clave_grafico]:
-                            figura = generar_grafico_chat(
-                                datos_mensaje,
-                                mensaje.get("pregunta", ""),
+                        if mensaje.get("resumen"):
+                            st.markdown(mensaje["resumen"])
+
+                        sugerencias = mensaje.get("sugerencias", [])
+                        if sugerencias:
+                            st.markdown(
+                                '<div class="chatbot-followups">Puedes continuar con:</div>',
+                                unsafe_allow_html=True,
                             )
-                            if figura is not None:
-                                st.plotly_chart(
-                                    figura,
-                                    width="stretch",
-                                    key=f"grafico_historial_{indice}",
+                            columnas = st.columns(min(len(sugerencias), 3))
+                            for posicion, (columna, sugerencia) in enumerate(
+                                zip(columnas, sugerencias[:3])
+                            ):
+                                with columna:
+                                    if st.button(
+                                        sugerencia,
+                                        key=f"chat_seguimiento_{indice}_{posicion}",
+                                        use_container_width=True,
+                                    ):
+                                        pregunta_sugerida = sugerencia
+
+                        if mensaje.get("sql"):
+                            with st.expander("Ver SQL generado"):
+                                st.code(mensaje["sql"], language="sql")
+
+                        datos_mensaje = mensaje.get("datos")
+                        if datos_mensaje is not None and mensaje["role"] == "assistant":
+                            clave_grafico = f"mostrar_grafico_chat_{indice}"
+                            if clave_grafico not in st.session_state:
+                                st.session_state[clave_grafico] = False
+
+                            texto_boton = (
+                                "Ocultar gráfico"
+                                if st.session_state[clave_grafico]
+                                else "Ver gráfico"
+                            )
+                            if st.button(
+                                texto_boton,
+                                key=f"boton_grafico_chat_{indice}",
+                            ):
+                                st.session_state[clave_grafico] = not st.session_state[clave_grafico]
+                                st.rerun()
+
+                            if st.session_state[clave_grafico]:
+                                figura = generar_grafico_chat(
+                                    datos_mensaje,
+                                    mensaje.get("pregunta", ""),
                                 )
+                                if figura is not None:
+                                    st.plotly_chart(
+                                        figura,
+                                        width="stretch",
+                                        key=f"grafico_historial_{indice}",
+                                    )
 
         pregunta = st.chat_input(
             "Envía un mensaje sobre tus exportaciones…",
